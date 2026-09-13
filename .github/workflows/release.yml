@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # The archive is built from the tag, so VERSION has to be correct
+      # *before* the tag is pushed -- rewriting it afterwards would still
+      # ship a stale VERSION inside the tarball, and flake.nix reads it.
+      # Release procedure: bump VERSION, commit, then tag.
+      - name: Check VERSION matches the tag
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          file_version="$(tr -d '[:space:]' < VERSION)"
+          if [ "$version" != "$file_version" ]; then
+            echo "::error::VERSION is '$file_version' but the tag is '$GITHUB_REF_NAME'." \
+                 "Bump VERSION, commit, and re-tag."
+            exit 1
+          fi
+
+      - name: Build release archive
+        id: build
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          name="rig-${version}"
+          git archive --format=tar.gz --prefix="${name}/" -o "${name}.tar.gz" "$GITHUB_REF_NAME"
+          sha256sum "${name}.tar.gz" > "${name}.tar.gz.sha256"
+          {
+            echo "version=$version"
+            echo "archive=${name}.tar.gz"
+            echo "sha256=$(cut -d' ' -f1 "${name}.tar.gz.sha256")"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "${{ steps.build.outputs.archive }}" \
+            "${{ steps.build.outputs.archive }}.sha256" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes
+
+      - name: Update Homebrew formula on default branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCHIVE: ${{ steps.build.outputs.archive }}
+          VERSION: ${{ steps.build.outputs.version }}
+          SHA256: ${{ steps.build.outputs.sha256 }}
+        run: |
+          default_branch="${{ github.event.repository.default_branch }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin "$default_branch"
+          git checkout -B "$default_branch" "origin/${default_branch}"
+          sed -i \
+            -e "s|url \".*\"|url \"https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${ARCHIVE}\"|" \
+            -e "s|sha256 \".*\"|sha256 \"${SHA256}\"|" \
+            -e "s|version \".*\"|version \"${VERSION}\"|" \
+            Formula/rig.rb
+          grep -q "sha256 \"${SHA256}\"" Formula/rig.rb \
+            || { echo "::error::formula sha256 was not updated"; exit 1; }
+          if ! git diff --quiet -- Formula/rig.rb; then
+            git commit -am "Formula/rig.rb: update to ${GITHUB_REF_NAME}"
+            git push origin "HEAD:${default_branch}"
+          fi

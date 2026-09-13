@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # shellcheck is preinstalled on the ubuntu runner image.
+      - name: shellcheck
+        run: |
+          shellcheck --version | sed -n '2p'
+          shellcheck -x src/*.sh test/helper.bash
+
+      # Installed into a user-writable prefix: parts of /usr/local are
+      # root-owned on the ubuntu runner. Pinned, because formatting rules
+      # change between shfmt releases.
+      - name: Install shfmt
+        run: |
+          version=v3.14.1
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL -o "$HOME/.local/bin/shfmt" \
+            "https://github.com/mvdan/sh/releases/download/${version}/shfmt_${version}_linux_amd64"
+          chmod +x "$HOME/.local/bin/shfmt"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # Indent width comes from .editorconfig.
+      - name: shfmt
+        run: |
+          shfmt --version
+          shfmt -d src/ test/
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Installed from source at a pinned tag rather than via npm: `npm
+      # install -g` needs root on the ubuntu runner, whose global prefix is
+      # /usr/local, but not on macOS. A user-writable prefix works the same
+      # way on both, and pins the version.
+      - name: Install bats
+        run: |
+          git clone --depth 1 --branch v1.14.0 \
+            https://github.com/bats-core/bats-core.git "$RUNNER_TEMP/bats-core"
+          "$RUNNER_TEMP/bats-core/install.sh" "$HOME/.local"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: bats
+        run: bats test/
+
+      # macOS ships bash 3.2 as /bin/bash, and that is the interpreter
+      # `#!/usr/bin/env bash` resolves to for users without a newer bash on
+      # PATH. Re-run the suite against it so 3.2 incompatibilities (notably
+      # "${arr[@]}" on an empty array under `set -u`) cannot slip through.
+      - name: bats under /bin/bash 3.2
+        if: matrix.os == 'macos-latest'
+        run: |
+          /bin/bash --version | head -1
+          RIG_BASH=/bin/bash bats test/

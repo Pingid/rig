@@ -1,0 +1,17 @@
+root = true
+
+[*]
+end_of_line = lf
+insert_final_newline = true
+charset = utf-8
+
+# Read by shfmt as well as by editors: 2-space indent, matching the existing
+# tree, and `case` branches indented under their `case`.
+[*.{sh,bash,bats}]
+indent_style = space
+indent_size = 2
+switch_case_indent = false
+
+[*.{nix,yml,yaml,rb}]
+indent_style = space
+indent_size = 2
