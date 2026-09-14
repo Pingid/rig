@@ -32,17 +32,27 @@ in the directory above `src/`; `rig version` reads it from there.
 ## Usage
 
 ```sh
-rig                       # show usage (exit 1)
-rig help                  # show usage (exit 0)
-rig version               # print the installed version
-rig ssh                   # ssh into REMOTE
-rig run <cmd>             # run a command on REMOTE
-rig apt <args>            # run apt non-interactively on REMOTE
-rig push <from> <to>      # rsync files to REMOTE
-rig pull <from> <to>      # rsync files from REMOTE
-rig scp <from> <to>       # copy a file to REMOTE
-rig install <target>      # install node/docker/tailscale on REMOTE
-rig tunnel <port>         # forward a local port to REMOTE
+rig                        # show usage (exit 1)
+rig help                   # show usage (exit 0)
+rig version                # print the installed version
+rig ssh                    # ssh into the remote
+rig run <cmd>              # run a command on the remote
+rig apt <args>             # run apt non-interactively on the remote
+rig push <from> <to>       # rsync files to the remote
+rig pull <from> <to>       # rsync files from the remote
+rig scp <from> <to>        # copy a file to the remote
+rig copy-id [<identity>]   # install your ssh public key on the remote
+rig install <target>       # install node/docker/tailscale on the remote
+rig tunnel <port>          # forward a local port to the remote
+rig remotes <sub>          # manage named remotes
+```
+
+Any command can be pointed at a different remote for one invocation with
+`-r`, which must come before the subcommand:
+
+```sh
+rig -r staging ssh
+rig --remote=staging push ./dist /srv/app
 ```
 
 `rig run` passes its argument to the remote login shell, which parses it once.
@@ -54,25 +64,79 @@ rig run 'echo $HOME'          # expands on the remote
 rig run "echo $HOME"          # expands locally, before it is sent
 ```
 
+## Named remotes
+
+Hosts you use repeatedly live in the global config, each under a name, with one
+of them marked as the default:
+
+```sh
+rig remotes add prod root@165.227.230.38 ~/.ssh/prod_ed25519
+rig remotes add staging deploy@10.0.0.5
+rig remotes use prod          # make prod the default
+rig remotes                   # list them; * marks the default
+rig remotes remove staging
+```
+
+```
+* prod     root@165.227.230.38  (~/.ssh/prod_ed25519)
+  staging  deploy@10.0.0.5
+```
+
+The first remote you add becomes the default automatically, so a single-host
+setup needs no second step. With a default set, plain `rig ssh` uses it and
+`rig -r staging ssh` overrides it for that one command.
+
+A project directory can be pinned to a remote without typing `-r` every time,
+by naming it in `./.rig.env`:
+
+```
+default = staging
+```
+
 ## Configuration
 
-Two variables are read: `REMOTE` (e.g. `root@165.227.230.38`) and the optional
-`REMOTE_KEY`, a path to an SSH identity file.
+The global config is `${XDG_CONFIG_HOME:-~/.config}/rig/config`. It is
+INI-shaped: keys before the first `[section]` are top-level, and each section
+defines one named remote.
 
-They are resolved in this order, lowest priority first:
+```ini
+default = prod
 
-| Source | Path |
+[prod]
+  remote = root@165.227.230.38
+  key    = ~/.ssh/prod_ed25519
+
+[staging]
+  remote = deploy@10.0.0.5
+```
+
+`#` and `;` start a comment, values may be quoted, a leading `~/` is expanded,
+and keys are case-insensitive. `host` is accepted as a synonym for `remote`,
+and `key` or `identity` for `remote_key`. Any other key is ignored.
+
+`rig remotes` writes this file for you; editing it by hand is equally fine.
+
+### How a remote is chosen
+
+Highest priority first:
+
+| Source | Form |
 | --- | --- |
-| global config | `${XDG_CONFIG_HOME:-~/.config}/rig/config` |
-| local config | `./.rig.env` |
-| environment | `REMOTE=other rig ssh` |
+| command line | `rig -r <name>` / `--remote=<name>` |
+| environment | `RIG_REMOTE=<name>`, or `REMOTE=<host>` for a raw host |
+| local config | `./.rig.env` — `REMOTE=<host>` or `default = <name>` |
+| global default | `default = <name>` in the global config |
+| global fallback | a top-level `REMOTE=<host>` in the global config |
 
-so the environment is always a one-off override. Config files are
-`KEY=VALUE` per line; `#` starts a comment, values may be quoted, and keys
-other than `REMOTE` and `REMOTE_KEY` are ignored.
+so `REMOTE=other rig ssh` remains a one-off override, and the last row is the
+flat pre-named-remotes format, which still works unchanged.
 
-Running a command with no remote configured prompts for one and offers to save
-it locally or globally. With no terminal attached it fails instead of hanging.
+`REMOTE_KEY` (an SSH identity path) follows the remote it belongs to, and can
+also be overridden for one invocation from the environment.
+
+Running a host command with no remote configured at all prompts for one and
+offers to save it locally or globally. With no terminal attached it fails
+instead of hanging.
 
 ### Migrating from older versions
 
@@ -87,6 +151,19 @@ mv ./.env ./.rig.env
 
 The script-adjacent location never really worked: it is read-only under Nix and
 discarded by every `brew upgrade`.
+
+## Copying your SSH key to a host
+
+```sh
+rig copy-id                    # install the remote's configured identity
+rig -r staging copy-id         # ...for a specific remote
+rig copy-id ~/.ssh/other.pub   # install a particular key
+```
+
+With no argument this installs the remote's `key` if it has one, and otherwise
+lets `ssh-copy-id` pick your default identity. The connection deliberately does
+*not* force that key as the login identity — the whole point is that it is not
+on the host yet, so password auth has to remain available.
 
 ## Development
 

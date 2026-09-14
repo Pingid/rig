@@ -14,7 +14,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # shellcheck is preinstalled on the ubuntu runner image.
+      # Pinned rather than using the runner's preinstalled shellcheck: which
+      # findings are reported changes between releases, so an unpinned linter
+      # makes the job pass or fail depending on the image of the day. (0.9.0
+      # reports SC2015 where 0.11.0 does not.)
+      - name: Install shellcheck
+        run: |
+          version=v0.11.0
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL \
+            "https://github.com/koalaman/shellcheck/releases/download/${version}/shellcheck-${version}.linux.x86_64.tar.xz" \
+            | tar -xJ -C "$RUNNER_TEMP"
+          mv "$RUNNER_TEMP/shellcheck-${version}/shellcheck" "$HOME/.local/bin/shellcheck"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
       - name: shellcheck
         run: |
           shellcheck --version | sed -n '2p'

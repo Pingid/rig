@@ -15,7 +15,7 @@ setup() {
   mkdir -p "$RIG_TEST_ROOT/stub" "$RIG_TEST_ROOT/home" "$RIG_TEST_ROOT/work"
 
   local b
-  for b in ssh rsync scp; do
+  for b in ssh rsync scp ssh-copy-id; do
     # Quoted heredoc: the stub is written verbatim and names itself from $0.
     cat >"$RIG_TEST_ROOT/stub/$b" <<'STUB'
 #!/bin/sh
