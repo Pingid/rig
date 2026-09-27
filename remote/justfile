@@ -1,0 +1,13 @@
+set dotenv-load
+
+[private]
+default:
+   @just --justfile '{{justfile()}}' --list --list-heading $'\n' --list-prefix "  → "
+
+# Apply the home-manager configuration
+apply:
+   home-manager switch -b backup --flake '{{justfile_directory()}}'
+
+# Update the nix flake inputs (nixpkgs, home-manager)
+update:
+   nix flake update --flake '{{justfile_directory()}}'

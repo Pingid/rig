@@ -9,16 +9,20 @@
     };
   };
 
-  let cfg = import ./config.nix;
-
-  outputs = { nixpkgs, home-manager, ... }:
+  outputs =
+    { nixpkgs, home-manager, ... }:
     let
+      cfg = import ./config.nix;
       system = cfg.systemType;
       pkgs = nixpkgs.legacyPackages.${system};
-    in {
-      homeConfigurations."${cfg.username}" = home-manager.lib.homeManagerConfiguration {
+    in
+    {
+      packages.${system}.default = home-manager.packages.${system}.default;
+
+      homeConfigurations.${cfg.username} = home-manager.lib.homeManagerConfiguration {
         inherit pkgs;
-        modules = [ ./home.nix { inherit cfg; } ];
+        extraSpecialArgs = { inherit cfg; };
+        modules = [ ./home.nix ];
       };
     };
 }

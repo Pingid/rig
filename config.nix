@@ -1,6 +1,0 @@
-{
-  systemType     = "";
-  hostname       = "";
-  username       = "";
-  homeDirectory  = "";
-}
