@@ -1,0 +1,6 @@
+{
+  systemType     = "";
+  hostname       = "";
+  username       = "";
+  homeDirectory  = "";
+}
